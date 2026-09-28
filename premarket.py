@@ -69,10 +69,11 @@ def fetch_option_pcr():
     next_month = (now.replace(day=1) + timedelta(days=32)).strftime("%y%m")
     months = [current_month, next_month]
 
-    targets = [
-        ("创业板ETF期权", "创业板ETF期权"),
-        ("500ETF期权", "中证500ETF期权"),
-    ]
+   targets = [
+    ("南方中证500ETF期权", "中证500ETF期权"),
+    ("易方达创业板ETF期权", "创业板ETF期权"),
+       ("华夏科创50ETF期权", "科创50ETF期权")
+]
     for symbol, label in targets:
         for m in months:
             try:
