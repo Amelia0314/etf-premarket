@@ -44,6 +44,8 @@ def fetch_etf():
     targets = {"159915": "创业板ETF", "588000": "科创50ETF", "510500": "中证500ETF"}
     try:
         df = ak.fund_etf_spot_em()
+        print("ETF列名:", list(df.columns))
+print("前3行:", df.head(3).to_string())
         result = []
         for code, name in targets.items():
             row = df[df['代码'] == code]
