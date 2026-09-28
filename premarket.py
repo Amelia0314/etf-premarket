@@ -9,15 +9,6 @@ WEBHOOK = os.environ.get("WECHAT_WEBHOOK_URL")
 BJ_TZ = timezone(timedelta(hours=8))
 WEEKDAY_CN = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
 
-# 用于提取全球财经新闻的标的（yfinance 返回的是与该标的相关的新闻）
-NEWS_TICKERS = [
-    ("SPY", "标普500"),
-    ("QQQ", "纳斯达克100"),
-    ("159915.SZ", "创业板"),
-    ("588000.SS", "科创50"),
-    ("510500.SS", "中证500"),
-]
-
 
 def get_push_type():
     now = datetime.now(BJ_TZ)
@@ -45,12 +36,13 @@ def is_trade_day():
         return True
 
 
-# ========== 行情 ==========
 def fetch_yf(ticker, label):
+    """统一用 yfinance 拉行情（美股、亚太、A股ETF都走这里）"""
     try:
         t = yf.Ticker(ticker)
         hist = t.history(period="5d", interval="1d")
         if hist is None or len(hist) < 2:
+            print(f"{ticker} 数据不足")
             return None
         last = hist.iloc[-1]
         prev = hist.iloc[-2]
@@ -61,53 +53,10 @@ def fetch_yf(ticker, label):
         change_pct = (price - prev_close) / prev_close * 100
         return {"label": label, "price": price, "change_pct": change_pct}
     except Exception as e:
-        print(f"yfinance {ticker} 行情失败: {e}")
+        print(f"yfinance {ticker} 失败: {e}")
         return None
 
 
-# ========== 新闻（yfinance 通道，国外服务器可用） ==========
-def fetch_news(limit_per_ticker=3):
-    """从 yfinance 获取与各标的相关的财经新闻"""
-    all_news = []
-    seen_titles = set()
-
-    for ticker, tag in NEWS_TICKERS:
-        try:
-            t = yf.Ticker(ticker)
-            news_list = t.news
-            if not news_list:
-                continue
-            for item in news_list[:limit_per_ticker]:
-                # yfinance 新闻结构：可能是 {'title':..., 'link':...} 或 {'content':{...}}
-                if isinstance(item, dict) and 'title' in item:
-                    title = item.get('title', '')
-                    link = item.get('link', '')
-                    publisher = item.get('publisher', '')
-                elif isinstance(item, dict) and 'content' in item:
-                    c = item['content']
-                    title = c.get('title', '')
-                    link = (c.get('canonicalUrl') or {}).get('url', '')
-                    publisher = (c.get('provider') or {}).get('displayName', '')
-                else:
-                    continue
-
-                title = str(title).strip()
-                if not title or title in seen_titles:
-                    continue
-                seen_titles.add(title)
-                all_news.append({
-                    "title": title,
-                    "link": link,
-                    "publisher": publisher,
-                    "tag": tag,
-                })
-        except Exception as e:
-            print(f"yfinance {ticker} 新闻失败: {e}")
-
-    return all_news[:10]  # 最多10条
-
-
-# ========== 格式化 ==========
 def format_pct(pct):
     if pct >= 0:
         return f"**+{pct:.2f}%**"
@@ -146,19 +95,7 @@ def build_etf_block(etf_data, title="A股核心标的"):
     return "\n".join(lines)
 
 
-def build_news_block(news_list):
-    lines = ["## 📰 财经新闻", ""]
-    if not news_list:
-        lines.append("- 暂无相关新闻")
-    else:
-        for i, item in enumerate(news_list, 1):
-            pub = f"（{item['publisher']}）" if item['publisher'] else ""
-            lines.append(f"{i}. {item['title']} {pub}")
-    lines.append("")
-    return "\n".join(lines)
-
-
-def build_message(push_type, us_data, asia_data, etf_data, news_list):
+def build_message(push_type, us_data, asia_data, etf_data):
     now = datetime.now(BJ_TZ)
     date_str = now.strftime("%Y-%m-%d") + " " + WEEKDAY_CN[now.weekday()]
 
@@ -184,8 +121,6 @@ def build_message(push_type, us_data, asia_data, etf_data, news_list):
         L.append(build_etf_block(etf_data, "A股核心标的（今日收盘）"))
     elif push_type == "review":
         L.append(build_etf_block(etf_data, "A股核心标的（今日收盘）"))
-
-    L.append(build_news_block(news_list))
 
     L.append("—————————————")
     L.append("*由 GitHub Actions 自动生成 · 数据仅供参考*")
@@ -220,6 +155,7 @@ def main():
         asia_data = [fetch_yf("^N225", "日经225"), fetch_yf("^KS11", "KOSPI")]
         asia_data = [x for x in asia_data if x]
 
+    # A股三大ETF，统一走 yfinance
     etf_targets = [
         ("159915.SZ", "创业板ETF（159915）"),
         ("588000.SS", "科创50ETF（588000）"),
@@ -231,10 +167,7 @@ def main():
         if r:
             etf_data.append(r)
 
-    # 四个时段都拉新闻
-    news_list = fetch_news(limit_per_ticker=3)
-
-    msg = build_message(push_type, us_data, asia_data, etf_data, news_list)
+    msg = build_message(push_type, us_data, asia_data, etf_data)
     print("=" * 60)
     print(msg)
     print("=" * 60)
